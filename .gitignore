@@ -1,6 +1,9 @@
 # Data folders
 images/
 *.csv
+train_data/
+val_data
+
 
 
 # Byte-compiled / optimized / DLL files

@@ -140,5 +140,6 @@ pool = multiprocessing.Pool(12)
 s = pool.map(process_on_split, range(12))
 print("Writing Labels")
 with open(flags.labels_txt, "w") as wf:
+    wf.write("filename,xmin,xmax,ymin,ymax,class_ind\n")
     wf.write("".join(np.concatenate(s)))
 print("Written Labels")
