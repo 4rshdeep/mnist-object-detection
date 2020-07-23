@@ -13,6 +13,13 @@
 #     name: python3
 # ---
 
+import os
+os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   
+os.environ["CUDA_VISIBLE_DEVICES"]="-1"
+
+import warnings
+warnings.filterwarnings("ignore")
+
 from keras.optimizers import Adam, SGD
 from keras.callbacks import ModelCheckpoint, LearningRateScheduler, TerminateOnNaN, CSVLogger
 from keras import backend as K
@@ -23,21 +30,14 @@ from matplotlib import pyplot as plt
 
 # +
 from keras_ssd300 import ssd_300
-
-from keras_layers.keras_layer_AnchorBoxes import AnchorBoxes
-from keras_layers.keras_layer_DecodeDetections import DecodeDetections
-from keras_layers.keras_layer_DecodeDetectionsFast import DecodeDetectionsFast
-from keras_layers.keras_layer_L2Normalization import L2Normalization
-
 from keras_loss_function.keras_ssd_loss import SSDLoss
 
 from ssd_encoder_decoder.ssd_input_encoder import SSDInputEncoder
-from ssd_encoder_decoder.ssd_output_decoder import decode_detections, decode_detections_fast
+from ssd_encoder_decoder.ssd_output_decoder import decode_detections
 
 from data_generator.object_detection_2d_data_generator import DataGenerator
 from data_generator.object_detection_2d_geometric_ops import Resize
 from data_generator.object_detection_2d_photometric_ops import ConvertTo3Channels
-from data_generator.data_augmentation_chain_original_ssd import SSDDataAugmentation
 from data_generator.object_detection_2d_misc_utils import apply_inverse_transforms
 
 # + colab={} colab_type="code" id="OkKWytP_T01o"
@@ -105,16 +105,12 @@ weights_path = "ssd300_pascal_07+12_epoch-06_loss-12.1974_val_loss-11.1232.h5"
 
 model.load_weights(weights_path, by_name=True)
 
-# + colab={} colab_type="code" id="9lwZMWY34zSU"
-# del train_dataset
-# del val_dataset
-
 # + colab={"base_uri": "https://localhost:8080/", "height": 34} colab_type="code" id="8AfHGJ9cUL2p" outputId="b082c4de-5db0-4eeb-c922-75b861d9560c"
 # 1: Instantiate two `DataGenerator` objects: One for training, one for validation.
 
 # Optional: If you have enough memory, consider loading the images into memory for the reasons explained above.
 
-train_dataset = DataGenerator(load_images_into_memory=False, hdf5_dataset_path=None)
+# train_dataset = DataGenerator(load_images_into_memory=False, hdf5_dataset_path=None)
 val_dataset = DataGenerator(load_images_into_memory=False, hdf5_dataset_path=None)
 
 # 2: Parse the image and label lists for the training and validation datasets.
@@ -129,49 +125,20 @@ val_images_dir = "./val_data/"
 train_labels_filename = './train.csv'
 val_labels_filename   = './val.csv'
 
-train_dataset.parse_csv(images_dir=train_images_dir,
-                        labels_filename=train_labels_filename,
-                        input_format=['image_name', 'xmin', 'xmax', 'ymin', 'ymax', 'class_id'], # This is the order of the first six columns in the CSV file that contains the labels for your dataset. If your labels are in XML format, maybe the XML parser will be helpful, check the documentation.
-                        include_classes='all')
-
 val_dataset.parse_csv(images_dir=val_images_dir,
                       labels_filename=val_labels_filename,
                       input_format=['image_name', 'xmin', 'xmax', 'ymin', 'ymax', 'class_id'],
                       include_classes='all')
 
-# # Optional: Convert the dataset into an HDF5 dataset. This will require more disk space, but will
-# speed up the training. Doing this is not relevant in case you activated the `load_images_into_memory`
-# option in the constructor, because in that cas the images are in memory already anyway. If you don't
-# want to create HDF5 datasets, comment out the subsequent two function calls.
-
-# train_dataset.create_hdf5_dataset(file_path='dataset_udacity_traffic_train.h5',
-#                                   resize=False,
-#                                   variable_image_size=True,
-#                                   verbose=True)
-
-# val_dataset.create_hdf5_dataset(file_path='dataset_udacity_traffic_val.h5',
-#                                 resize=False,
-#                                 variable_image_size=True,
-#                                 verbose=True)
-
 # Get the number of samples in the training and validations datasets.
-train_dataset_size = train_dataset.get_dataset_size()
 val_dataset_size   = val_dataset.get_dataset_size()
 
-print("Number of images in the training dataset:\t{:>6}".format(train_dataset_size))
 print("Number of images in the validation dataset:\t{:>6}".format(val_dataset_size))
 
 # + colab={"base_uri": "https://localhost:8080/", "height": 50} colab_type="code" id="oIajsyPT9Yqj" outputId="26a33a0f-029a-4900-ee74-83bc268b60e7"
 # 3: Set the batch size.
 
 batch_size = 32 # Change the batch size if you like, or if you run into GPU memory issues.
-
-# 4: Set the image transformations for pre-processing and data augmentation options.
-
-# For the training generator:
-ssd_data_augmentation = SSDDataAugmentation(img_height=img_height,
-                                            img_width=img_width,
-                                            background=mean_color)
 
 # For the validation generator:
 convert_to_3_channels = ConvertTo3Channels()
@@ -203,15 +170,7 @@ ssd_input_encoder = SSDInputEncoder(img_height=img_height,
                                     neg_iou_limit=0.5,
                                     normalize_coords=normalize_coords)
 
-# 6: Create the generator handles that will be passed to Keras' `fit_generator()` function.
-
-train_generator = train_dataset.generate(batch_size=batch_size,
-                                         shuffle=True,
-                                         transformations=[ssd_data_augmentation],
-                                         label_encoder=ssd_input_encoder,
-                                         returns={'processed_images',
-                                                  'encoded_labels'},
-                                         keep_images_without_gt=False)
+# 6: Create the generator 
 
 val_generator = val_dataset.generate(batch_size=batch_size,
                                      shuffle=False,
@@ -223,65 +182,10 @@ val_generator = val_dataset.generate(batch_size=batch_size,
                                      keep_images_without_gt=False)
 
 # Get the number of samples in the training and validations datasets.
-train_dataset_size = train_dataset.get_dataset_size()
 val_dataset_size   = val_dataset.get_dataset_size()
 
 print("Number of images in the training dataset:\t{:>6}".format(train_dataset_size))
 print("Number of images in the validation dataset:\t{:>6}".format(val_dataset_size))
-
-
-# + colab={} colab_type="code" id="uRoPIPiz93AZ"
-# Define a learning rate schedule.
-
-def lr_schedule(epoch):
-    if epoch < 80:
-        return 0.0001
-    elif epoch < 100:
-        return 0.00001
-    else:
-        return 0.000001
-
-
-# + colab={} colab_type="code" id="rRdRG4ym98CU"
-# Define model callbacks.
-
-# TODO: Set the filepath under which you want to save the model.
-model_checkpoint = ModelCheckpoint(filepath='ssd300_pascal_07+12_epoch-{epoch:02d}_loss-{loss:.4f}_val_loss-{val_loss:.4f}.h5',
-                                   monitor='val_loss',
-                                   verbose=1,
-                                   save_best_only=True,
-                                   save_weights_only=False,
-                                   mode='auto',
-                                   period=1)
-#model_checkpoint.best = 
-
-csv_logger = CSVLogger(filename='ssd300_pascal_07+12_training_log.csv',
-                       separator=',',
-                       append=True)
-
-learning_rate_scheduler = LearningRateScheduler(schedule=lr_schedule,
-                                                verbose=1)
-
-terminate_on_nan = TerminateOnNaN()
-
-callbacks = [model_checkpoint,
-             csv_logger,
-             learning_rate_scheduler,
-             terminate_on_nan]
-
-# + colab={"base_uri": "https://localhost:8080/", "height": 706} colab_type="code" id="59RY8L5T9-Ju" outputId="9533e31b-973e-4a65-d7f0-4e0beb877024"
-# If you're resuming a previous training, set `initial_epoch` and `final_epoch` accordingly.
-initial_epoch   = 0
-final_epoch     = 120
-steps_per_epoch = 1000
-
-history = model.fit_generator(generator=train_generator,
-                              steps_per_epoch=steps_per_epoch,
-                              epochs=final_epoch,
-                              callbacks=callbacks,
-                              validation_data=val_generator,
-                              validation_steps=ceil(val_dataset_size/batch_size),
-                              initial_epoch=initial_epoch, verbose=1)
 
 # + colab={} colab_type="code" id="9q_GVtm9-Apk"
 predict_generator = val_dataset.generate(batch_size=1,
